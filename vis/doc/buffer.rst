@@ -1,4 +1,0 @@
-Buffer
-======
-
-.. doxygenfile:: buffer.h

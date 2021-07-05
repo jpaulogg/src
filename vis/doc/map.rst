@@ -1,4 +1,0 @@
-Map
-===
-
-.. doxygenfile:: map.h
