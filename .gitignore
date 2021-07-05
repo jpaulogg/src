@@ -1,0 +1,14 @@
+*.o
+*.rej
+*.orig
+dmenu/dmenu
+dvtm/dvtm
+dwm/dwm
+par-1.52/par
+scroll/scroll
+slstatus/slstatus
+st/st
+tabbed/tabbed
+vis/vis
+
+
