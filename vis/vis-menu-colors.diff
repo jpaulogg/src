@@ -1,0 +1,15 @@
+diff --git a/vis-menu.c b/vis-menu.c
+index 946de56..9d994d9 100644
+--- a/vis-menu.c
++++ b/vis-menu.c
+@@ -137,8 +137,8 @@ drawtext(const char *t, size_t w, Color col) {
+ 	if (!(buf = calloc(1, tw+1))) die("Can't calloc.");
+ 	switch (col) {
+ 	case C_Reverse:
+-		prestr="\033[7m";
+-		poststr="\033[0m";
++		prestr="\033[30;43m";      /* cor e atributos do texto selecionado */
++		poststr="\033[0m";         /* cor e atributos do texto não selecionado */
+ 		break;
+ 	case C_Normal:
+ 	default:
