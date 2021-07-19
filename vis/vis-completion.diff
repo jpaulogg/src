@@ -1,0 +1,273 @@
+--- a/lua/plugins/complete-filename.lua
++++ b/lua/plugins/complete-filename.lua
+@@ -15,7 +15,7 @@ vis:map(vis.modes.INSERT, "<C-x><C-f>", function()
+ 	-- Strip leading delimiters for some languages
+ 	local _, j = string.find(prefix, "[[(<'\"]+")
+ 	if j then prefix = prefix:sub(j + 1) end
+-	local cmd = string.format("vis-complete --file '%s'", prefix:gsub("'", "'\\''"))
++	local cmd = "vis-complete -p 'filename:' --file " .. prefix:gsub("'", "'\\''")
+ 	local status, out, err = vis:pipe(file, { start = 0, finish = 0 }, cmd)
+ 	if status ~= 0 or not out then
+ 		if err then vis:info(err) end
+@@ -27,7 +27,7 @@ end, "Complete file path")
+ 
+ -- complete file path at primary selection location using vis-open(1)
+ 
+-vis:map(vis.modes.INSERT, "<C-x><C-o>", function()
++vis:map(vis.modes.INSERT, "<C-o>", function()
+ 	local win = vis.win
+ 	local file = win.file
+ 	local pos = win.selection.pos
+@@ -43,14 +43,14 @@ vis:map(vis.modes.INSERT, "<C-x><C-o>", function()
+ 		range.start = pos
+ 		range.finish = pos
+ 	end
+-	local cmd = string.format("vis-open -- '%s'*", prefix:gsub("'", "'\\''"))
++	local cmd = string.format("vis-open -b -f %s*", prefix:gsub("'", "'\\''"))
+ 	local status, out, err = vis:pipe(file, { start = 0, finish = 0 }, cmd)
+ 	if status ~= 0 or not out then
+ 		if err then vis:info(err) end
+ 		return
+ 	end
+-	out = out:gsub("\n$", "")
++	out = out:gsub("\n$", ""):gsub(" ","\\ ")
+ 	file:delete(range)
+ 	file:insert(range.start, out)
+ 	win.selection.pos = range.start + #out
+-end, "Complete file name")
++end, "File browser")
+diff --git a/lua/plugins/complete-word.lua b/lua/plugins/complete-word.lua
+index 41d112c..397e299 100644
+--- a/lua/plugins/complete-word.lua
++++ b/lua/plugins/complete-word.lua
+@@ -1,6 +1,6 @@
+ -- complete word at primary selection location using vis-complete(1)
+ 
+-vis:map(vis.modes.INSERT, "<C-n>", function()
++vis:map(vis.modes.INSERT, "<C-x><C-n>", function()
+ 	local win = vis.win
+ 	local file = win.file
+ 	local pos = win.selection.pos
+@@ -11,12 +11,15 @@ vis:map(vis.modes.INSERT, "<C-n>", function()
+ 	if range.start == range.finish then return end
+ 	local prefix = file:content(range)
+ 	if not prefix then return end
+-	local cmd = string.format("vis-complete --word '%s'", prefix:gsub("'", "'\\''"))
++	local cmd = "vis-complete -p 'word:' --word " .. prefix:gsub("'", "'\\''")
+ 	local status, out, err = vis:pipe(file, { start = 0, finish = file.size }, cmd)
+ 	if status ~= 0 or not out then
+ 		if err then vis:info(err) end
+ 		return
+ 	end
+-	file:insert(pos, out)
+-	win.selection.pos = pos + #out
++	if vis.mode == vis.modes.INSERT then
++		vis:insert(out)
++	elseif vis.mode == vis.modes.REPLACE then
++		vis:replace(out)
++	end
+ end, "Complete word in file")
+diff --git a/vis-complete b/vis-complete
+index 2e664b0..fc75d93 100755
+--- a/vis-complete
++++ b/vis-complete
+@@ -1,65 +1,50 @@
+ #!/bin/sh
+ set -e
+ 
+-basic_regex_quote() { printf "%s" "$1" | sed 's|[\\.*^$[]|\\&|g'; }
+-glob_quote () { printf "%s" "$1" | sed 's|[\\?*[]]|\\&|g'; }
++print_completion() { sort -u | $VIS_MENU | sed "s/^$1//" | tr -d '\n'; }
++usage() { echo "usage: ${0##*/} [-l lines] [-p prompt] [--word|--file] [pattern]"; }
+ 
+-PATTERN=""
+-COMPLETE_WORD=0
+-FIND_FILE_LIMIT=1000
++VIS_MENU='vis-menu -b -i'
++FIND_FILES_LIMIT=3000
++FIND_MAXDEPTH=3       # 4 levels - expanding "$1"* will give us another level
++COMPLETE_MODE='-'     # "-" standard input; "w" word; "f" filename
+ 
+ while [ $# -gt 0 ]; do
+ 	case "$1" in
+-	-h|--help)
+-		echo "usage: $(basename "$0") [-h] [--file|--word] [pattern]"
+-		exit 0;
+-		;;
+-	--file)
+-		shift
+-		;;
+-	--word)
+-		COMPLETE_WORD=1
+-		shift
+-		;;
+-	*)
+-		PATTERN="$1"
+-		break
+-		;;
++		-h|--help) usage 1>&2; exit 0
++		           ;;
++		-l|-p)     VIS_MENU="$VIS_MENU $1 $2"; shift
++		           ;;
++		--word)    COMPLETE_MODE='w'
++		           ;;
++		--file)    COMPLETE_MODE='f'
++		           ;;
++		*)         break
+ 	esac
++	shift
+ done
+ 
+-if [ $COMPLETE_WORD = 1 ]; then
+-	tr -cs '[:alnum:]_' '\n' |
+-		grep "^$(basic_regex_quote "$PATTERN")." |
+-		sort -u
+-else
+-	# Expand to absolute path because of the -path option below.
+-	case $PATTERN in
+-		/*)
+-			XPATTERN=$PATTERN
+-			;;
+-		'~'|'~/'*)
+-			XPATTERN=$HOME$(echo $PATTERN | tail -c +2)
+-			;;
+-		*)
+-			XPATTERN=$PWD/$PATTERN
+-			;;
+-	esac
++case $COMPLETE_MODE in
++	-)
++		# In this case  we can't predict what  kind of pattern will be  used. So let's
++		# escape both slashes and meta-characters to avoid problems with sed and grep.
++		PATTERN=$(printf '%s' "$1" | sed 's|[/\\.*^$[]|\\&|g')
+ 
+-	# The first path condition rules out paths that start with "." unless
+-	# they start with "..". That way, hidden paths should stay hidden, but
+-	# non-normalised paths should still show up.
+-	find $(dirname "$XPATTERN") \
+-		-name '.*' -prune \
+-		-o \( \
+-			! -name '.*' \
+-			-a -path "$(glob_quote "$XPATTERN")*" \
+-			-print \
+-		\) 2>/dev/null |
+-		head -n $FIND_FILE_LIMIT |
+-		sort |
+-		sed "s|^$(dirname $XPATTERN)/||"
+-fi |
+-	vis-menu -b |
+-	sed "s|^$(basename $PATTERN)$(echo $PATTERN | tail -c 2 | fgrep /)||" |
+-	tr -d '\n'
++		grep "^$PATTERN." | print_completion "$PATTERN"
++		;;
++	w)
++		tr -cs '[:alnum:]_' '\n' | grep "^$1." | print_completion "$1"
++		;;
++	f)
++		# Ignore hidden paths, unless pattern's "basename" starts with ".".
++		case "$(basename "$1")" in ([!.]*) FIND_PRUNE='.*'; esac
++
++		find "$1"* \
++			-maxdepth $FIND_MAXDEPTH \
++			-name "${FIND_PRUNE-.git}" -prune \
++			-o -print 2> /dev/null |
++			head -n $FIND_FILES_LIMIT |
++			sed "s|^$(dirname "$1".)/||" |
++			print_completion "$(basename "$1")"
++		;;
++esac
+diff --git a/vis-open b/vis-open
+index 6d25326..62a8398 100755
+--- a/vis-open
++++ b/vis-open
+@@ -1,45 +1,31 @@
+ #!/bin/sh
+ set -e
+ 
+-# Later, we're going to want to set $IFS to a single newline, so let's prepare one.
+-NL='
+-'
+-
+-VIS_MENU_PROMPT=""
+-ALLOW_AUTO_SELECT=1
++usage() { echo "usage: $(basename $0) [-b|-t] [-l lines] [-f] [file-pattern]"; }
+ 
+ wrap_dirs() {
+ 	local o
+-
+ 	while read o
+ 	do
+ 		[ -d "$o" ] && printf "%s/\n" "$o" || printf "%s\n" "$o"
+ 	done
+ }
+ 
++# Later, we're going to want to set $IFS to a single newline, so let's prepare one.
++NL='
++'
++
++VIS_MENU_POS='-b'
++ALLOW_AUTO_SELECT=1
++
+ while [ $# -gt 0 ]; do
+ 	case "$1" in
+-	-h|--help)
+-		echo "usage: $(basename $0) [-h] [-p prompt] [-f] [--] [file-pattern]"
+-		exit 0;
+-		;;
+-	-p)
+-		VIS_MENU_PROMPT=$2
+-		shift
+-		shift
+-		;;
+-	-f)
+-		ALLOW_AUTO_SELECT=""
+-		shift
+-		;;
+-	--)
+-		shift
+-		break
+-		;;
+-	*)
+-		break
+-		;;
++		-h|--help) usage; exit 0;;
++		-b|-t) VIS_MENU_POS=$1;;
++		-f) ALLOW_AUTO_SELECT="";;
++		*) break
+ 	esac
++	shift
+ done
+ 
+ # At this point, all the remaining arguments should be the expansion of
+@@ -55,7 +41,7 @@ if [ $# -eq 1 -a "$ALLOW_AUTO_SELECT" = 1 ]; then
+ 		# full list, even if it's just an empty directory.
+ 		cd "$1"
+ 		IFS=$NL  # Don't split ls output on tabs or spaces.
+-		exec "$0" -p "$VIS_MENU_PROMPT" -f .. $(ls -1)
++		exec "$0" VIS_MENU_POS -f '..' $(ls -1)
+ 	else
+ 		# We've found a single item, and it's not a directory,
+ 		# so it must be a filename (or file-like thing) to open,
+@@ -72,7 +58,7 @@ fi
+ 
+ # At this point, we have a bunch of options we need to present to the
+ # user so they can pick one.
+-CHOICE=$(printf "%s\n" "$@" | wrap_dirs | vis-menu -b -p "$VIS_MENU_PROMPT")
++CHOICE=$(printf "%s\n" "$@" | wrap_dirs | vis-menu $VIS_MENU_POS)
+ 
+ # Did they pick a file or directory? Who knows, let's let the next iteration figure it out.
+-exec "$0" -p "$VIS_MENU_PROMPT" -- "$CHOICE"
++exec "$0" $VIS_MENU_POS "$CHOICE"
+diff --git a/vis-prompt.c b/vis-prompt.c
+index bb1db39..61e7b1a 100644
+--- a/vis-prompt.c
++++ b/vis-prompt.c
+@@ -153,7 +153,7 @@ static const KeyBinding prompt_up_binding = {
+ 
+ static const KeyBinding prompt_tab_binding = {
+ 	.key = "<Tab>",
+-	.alias = "<C-x><C-o>",
++	.alias = "<C-o>",
+ };
+ 
+ void vis_prompt_show(Vis *vis, const char *title) {
