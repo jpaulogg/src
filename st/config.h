@@ -94,37 +94,34 @@ char *termname = "st-256color";
 unsigned int tabspaces = 8;
 
 /* bg opacity */
-float alpha = 0.90;
+float alpha = 0.80;
 
 /* Terminal colors (16 first used in escape sequence) */
 static const char *colorname[] = {
 	/* 8 normal colors */
-	"#3f3f3f",    /* preto */
-	"#d78787",    /* vermelho */
-	"#87af87",    /* verde */
-	"#afaf87",    /* amarelo */
-	"#458588",    /* azul */
-	"#dc8cc3",    /* magenta */
-	"#87afaf",    /* ciano */
-	"#d7d7d7",    /* cinza */
+	"#3f3f3f",    /*  preto    */
+	"#d78787",    /*  vermelho */
+	"#87af87",    /*  verde    */
+	"#afaf87",    /*  amarelo  */
+	"#8787af",    /*  azul     */
+	"#d787af",    /*  magenta  */
+	"#87afaf",    /*  ciano    */
+	"#d7d7d7",    /*  branco   */
 
 	/* 8 bright colors */
-	"#707070",
-	"#d7afaf",    /* salmão */
+	"#585858",
+	"#d7afaf",
 	"#87d7af",
 	"#d7d7af",
-	"#7cb8bb",
-	"#dc8cc3",    /* magenta */
-	"#93e0e3",
-	"#ffffff",
+	"#afafd7",
+	"#ffafd7",
+	"#87d7d7",
+	"#e4e4e4",
 
 	[255] = 0,
 
 	/* more colors can be added after 255 to use with DefaultXX */
 	"#282828",    /* preto escuro */
-	"#ffd7af",    /* laranja */
-	"#f8f893",    /* amarelo puro */
-	"#bc8cbc",    /* roxo */
 	};
 /*
  * Default colors (colorname index)
